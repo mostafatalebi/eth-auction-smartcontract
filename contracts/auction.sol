@@ -12,10 +12,12 @@ struct Bid {
 
 
 contract Auction {
+    event BidPlaced(
+        uint productCode,        
+        uint amount
+    );    
 
     using JsonWriter for JsonWriter.Json;
-
-
     
     address public owner;
     
@@ -169,6 +171,8 @@ contract Auction {
                 amount: amount,
                 put: true});
         }
+
+        emit BidPlaced(productCode, amount);
 
         balances[msg.sender] += amount;
     }
