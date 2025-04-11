@@ -11,7 +11,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.12",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@types/mocha": "^10.0.10",
-    "hardhat": "^2.22.19",
+    "hardhat": "^2.23.0",
     "mocha": "^11.1.0"
   },
   "scripts": {

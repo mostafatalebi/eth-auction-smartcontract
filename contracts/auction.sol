@@ -24,8 +24,8 @@ contract Auction {
     uint private maxProductsCount = 3;
 
     // no bid for no product can be lower 
-    // than this amount. The amount is in gwei
-    uint private minimumAllowedBid = 0;
+    // than this amount. 
+    uint private minimumAllowedBid = 1000000 gwei;
 
     mapping (address => bool) public allowedBuyers;
 
@@ -60,29 +60,57 @@ contract Auction {
     // the winners for each item
     mapping (uint => Bid) winningBids;
 
+
+    // any eth transfered through bid() function
+    // will be kept here. This includes all
+    // previous bids upon which the user has
+    // put newer (higher) bids. User needs to 
+    // call withdraw() to get the unused eth of his/her
+    mapping (address => uint) balances;
+
+    // keeps track of deposited eth by bidders.
+    // depositing happens when a bid is placed using
+    // bid() function (there is no direct way to deposit unless
+    // for a specific product).
+    // if a bidder calls withdraw(), only the difference
+    // between this deposit and his/her balance in 
+    // balances[] storage would be transfered. The amount
+    // here will be locked until the end of auction for
+    // corresponding bids. After the auction ends, the user's
+    // won bids will be subtracted from deposit and the rest will
+    // be available for withdrawing (withdraw() must be called by user)
+    mapping (address => uint)  biddersDeposit;
+
+    modifier onlyOwner {
+        require(msg.sender == owner, "FORBIDDEN");
+        _;
+    }
+
+    modifier authorizedBidder {
+        require(allowedBuyers[msg.sender] == true, "FORBIDDEN");
+        _;
+    }
+
     constructor(){
         owner = msg.sender;
         minimumDurationOfAuction = 30 * 60; // 30 minutes
-
+        allowedBuyers[owner] = true;
     }
 
 
-    function getCurrentBids(uint productCode, address bidderAddress) public view returns (uint) {
-        require(msg.sender == owner, "FORBIDDEN");
+    function getCurrentBids(uint productCode, address bidderAddress) public view onlyOwner returns (uint) {
         require(currentBids[productCode][bidderAddress].put == true, "BID_NOT_FOUND");
         return currentBids[productCode][bidderAddress].amount;
     }
 
 
-    function getHighestBid(uint productCode) public view returns (uint) {
-        require(msg.sender == owner, "FORBIDDEN");
+    function getHighestBid(uint productCode) public view onlyOwner returns (uint) {
         require(winningBids[productCode].put == true, "BID_NOT_FOUND");
         return winningBids[productCode].amount;
     }
 
 
-    function setAuctionTiming(uint start, uint end) external {
-        require(msg.sender == owner, "FORBIDDEN");
+    function setAuctionTiming(uint start, uint end) external onlyOwner {
         require(start < end && end - start >= minimumDurationOfAuction, "DURATION_TOO_SHORT");
         require(block.timestamp < start, "BAD_START_TIME");
 
@@ -92,25 +120,16 @@ contract Auction {
 
     // this function is used to authorize an entity to
     // be able to participate in the auction
-    function authorize(address toBeBuyer) external {
-        require(
-            owner == msg.sender, 
-        "FORBIDDEN");
-
+    function authorize(address toBeBuyer) external onlyOwner {
         require(
             allowedBuyers[toBeBuyer] == false,
             "DUPLICATE"
         );
 
-
         allowedBuyers[toBeBuyer] = true;
     }
 
-    function unauthorize(address toBeBuyer) external {
-        require(
-            toBeBuyer == msg.sender, 
-        "FORBIDDEN");
-
+    function unauthorize(address toBeBuyer) external onlyOwner {
         require(
             allowedBuyers[toBeBuyer] == true,
             "NOT_FOUND"
@@ -118,17 +137,24 @@ contract Auction {
         delete allowedBuyers[toBeBuyer];
     }
 
-    function bid(uint productCode, uint amount) external returns (bool) {
-        require(allowedBuyers[msg.sender] == true, "FORBIDDEN");
+    // bidding doesn't handle any sort of refund or withdrawal. If the bidder
+    // has attempted several bids, for each individual bid, the amount of ether
+    // should be sent along this function call. To withdraw his/her fund, the bidder
+    // needs to call withdraw function.
+    function bid(uint productCode) external payable authorizedBidder {
         require(block.timestamp > auctionStartTime, "NOT_STARTED");
         require(block.timestamp < auctionEndTime, "ALREADY_CLOSED");
         require(productsMap[productCode].exists == true, "PRODUCT_NOT_FOUND");
+        uint amount = msg.value;
         require(amount >= minimumAllowedBid, "BID_TOO_LOW");
 
         if(currentBids[productCode][msg.sender].put == true){
             require(currentBids[productCode][msg.sender].amount < amount, "BID_LOWER_THAN_PREVIOUS");
+             biddersDeposit[msg.sender] -= currentBids[productCode][msg.sender].amount;
+             biddersDeposit[msg.sender] += amount;
             currentBids[productCode][msg.sender].amount = amount;
         } else {
+             biddersDeposit[msg.sender] += amount;
             currentBids[productCode][msg.sender] = Bid({ 
                 buyer: msg.sender,
                 productCode: productCode,
@@ -143,13 +169,23 @@ contract Auction {
                 amount: amount,
                 put: true});
         }
+
+        balances[msg.sender] += amount;
     }
 
-    // adds/removes a product to biddable products. It allows adding/removing product only before
+
+    function withdraw() external authorizedBidder {
+        require(balances[msg.sender] > 0, "OUT_OF_BALANCE");
+        uint spending =  biddersDeposit[msg.sender];
+        uint remainder = balances[msg.sender] - spending;
+        balances[msg.sender] -= remainder;
+        require(payable(msg.sender).send(remainder) == true, "TRANSFER_FAILED");
+    }
+
+    // adds/removes a product form the auction. It allows adding/removing product only before
     // an acution starts
     // isRemove if true, removes the product
-    function product(uint productCode, uint startingBidPrice, bool isRemove) external {
-        require(msg.sender == owner, "FORBIDDEN");
+    function product(uint productCode, uint startingBidPrice, bool isRemove) external onlyOwner {
         if(isRemove == false) {
             addProduct(productCode, startingBidPrice);
         } else {
@@ -193,7 +229,7 @@ contract Auction {
     }
 
     // returns list of winners
-    function getWinners() public view returns(string memory) {
+    function getWinners() public view authorizedBidder returns(string memory)  {
         require(block.timestamp > auctionEndTime, "winners are announced after auction ends");
         JsonWriter.Json memory writer;
         writer = writer.writeStartArray();
@@ -210,4 +246,6 @@ contract Auction {
 
         return writer.value;
     }
+
+    receive() external payable {}
 }

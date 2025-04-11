@@ -94,7 +94,6 @@ describe("Auction", function () {
   });
 
     it("OK Must be OK on adding a product", async function(){
-      const exampleProductCode = 1001
       await auctionContract.connect(owner).setAuctionTiming(timestamp+singleDayTs, timestamp+singleDayTs*2);
       await auctionContract.connect(owner).product(1, 1000, false);
       // get the product count
@@ -108,7 +107,6 @@ describe("Auction", function () {
   });
 
   it("OK Must be OK removing a product", async function(){
-    const exampleProductCode = 1001
     await auctionContract.connect(owner).setAuctionTiming(timestamp+singleDayTs, timestamp+singleDayTs*2);
     await auctionContract.connect(owner).product(1, 1000, false);
     await auctionContract.connect(owner).product(1, 0, true);
@@ -140,44 +138,45 @@ describe("Auction", function () {
     }
   });
 
-  it("OK bid with both bidder users, and check their current and main highestBid."+
+  it("OK bid with both bidder users, and check their current and main highestBid. "+
     "Then move blockchain to past the endTime of the auction, and retry to assert an exception", async function(){
-    const exampleProductCode = 1001
+    var bidAmount = hre.ethers.parseEther("1.0");
+
     await auctionContract.connect(owner).authorize(bidder1)
     await auctionContract.connect(owner).setAuctionTiming(timestamp+singleDayTs, timestamp+singleDayTs*2);
     await auctionContract.connect(owner).product(1, 1000, false);
     await time.increaseTo(timestamp+singleDayTs+10); // make blockchain to move to this timestamp
-    await auctionContract.connect(bidder1).bid(1, 1200);
+    await auctionContract.connect(bidder1).bid(1, { value: bidAmount });
     var currentBid = await auctionContract.getCurrentBids(1, bidder1.address); 
-    expect(currentBid).to.equal(1200n);
+    expect(currentBid).to.equal(bidAmount);
     var productKey = await auctionContract.productsKeys(0);
     expect(Number(productKey)).to.equal(1n);
     var createdProduct = await auctionContract.productsMap(1);
     assert.deepEqual(createdProduct, [1n, 1000n, true]);
     var highestBid = await auctionContract.getHighestBid(1); 
-    expect(highestBid).to.equal(1200n);
+    expect(highestBid).to.equal(bidAmount);
     
     // make another bid, lowe than prevoious one by another bidder
     await auctionContract.connect(owner).authorize(bidder2)
-    await auctionContract.connect(bidder2).bid(1, 999);
+    await auctionContract.connect(bidder2).bid(1, { value: hre.ethers.parseEther("0.99") });
     var currentBid = await auctionContract.getCurrentBids(1, bidder2.address); 
-    expect(currentBid).to.equal(999n);
+    expect(currentBid).to.equal(hre.ethers.parseEther("0.99"));
     highestBid = await auctionContract.getHighestBid(1); 
-    expect(highestBid).to.equal(1200n);
+    expect(highestBid).to.equal(bidAmount);
     
     // now do a second bid with second user (third in total) and the
     // currentBid for the bidder2 as well as the highestBid must be changed
-    await auctionContract.connect(bidder2).bid(1, 2001);
+    await auctionContract.connect(bidder2).bid(1, { value: hre.ethers.parseEther("2.0")} );
     currentBid = await auctionContract.getCurrentBids(1, bidder2.address); 
-    expect(currentBid).to.equal(2001n);
+    expect(currentBid).to.equal(hre.ethers.parseEther("2.0"));
     highestBid = await auctionContract.getHighestBid(1); 
-    expect(highestBid).to.equal(2001n);    
+    expect(highestBid).to.equal(hre.ethers.parseEther("2.0"));    
     
     // now move the blockchain to past the auction's end
     await time.increaseTo(timestamp+singleDayTs*2+10); 
     
     try {
-      await auctionContract.connect(bidder2).bid(1, 2001);
+      await auctionContract.connect(bidder2).bid(1, { value: hre.ethers.parseEther("2.0") });
     } catch(e) {
       expect(e.message).to.contain("ALREADY_CLOSED");
     }
@@ -191,9 +190,10 @@ describe("Auction", function () {
 
     if(winningBids.length == 1) {
       expect(winningBids[0].productCode).to.equal(1);
-      expect(winningBids[0].amount).to.equal(2001);
+      expect(BigInt(winningBids[0].amount)).to.equal(hre.ethers.parseEther("2.0"));
       expect(winningBids[0].winner).to.equal(bidder2.address);
     }
+    
   });
 
 });
