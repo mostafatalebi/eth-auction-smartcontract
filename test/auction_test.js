@@ -1,6 +1,8 @@
 const { expect, assert } = require("chai");
 const hre = require("hardhat");
 const { time, helpers } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { StartType, ActivationType } = require("./enums.mjs");
+const { eth } = require("web3");
 
 describe("Auction", function () {
     const timestamp = Date.now();
@@ -12,8 +14,8 @@ describe("Auction", function () {
     beforeEach(async function () {
       [owner, unauthorized, bidder1, bidder2] = await hre.ethers.getSigners();
 
-      auctionFactory = await hre.ethers.getContractFactory("Auction");
-      auctionContract = await auctionFactory.deploy(owner);
+      auctionFactory = await hre.ethers.getContractFactory("Auction", owner);
+      auctionContract = await auctionFactory.deploy(ActivationType.Temporal);
     });
 
     // check if the owner is set correctly
@@ -31,7 +33,7 @@ describe("Auction", function () {
         assert.fail("FAIL! called authorize() with a non-owner address and encountered no error");
       } catch(e) {
         expect(e).to.not.empty;        
-        expect(e.message).to.contain("FORBIDDEN");
+        expect(e.message).to.contain("ErrForbidden()");
       }      
     });
 
@@ -47,7 +49,7 @@ describe("Auction", function () {
           assert.fail("FAIL! called setAuctionTiming() with a non-owner address and encountered no error");
         } catch(e) {
           expect(e).to.not.empty;
-          expect(e.message).to.contain("FORBIDDEN");
+          expect(e.message).to.contain("ErrForbidden()");
         }
     });
 
@@ -63,7 +65,7 @@ describe("Auction", function () {
           assert.fail("FAIL! called product() with a non-owner address and encountered no error");
         } catch(e) {
           expect(e).to.not.empty;
-          expect(e.message).to.contain("FORBIDDEN");
+          expect(e.message).to.contain("ErrForbidden()");
           console.log(e.message);
         }
     });
@@ -75,7 +77,7 @@ describe("Auction", function () {
         assert.fail("FAIL! called product() with a productCode < 1 and encountered no error");
       } catch(e) {
         expect(e).to.not.empty;
-        expect(e.message).to.contain("BAD_PCODE");
+        expect(e.message).to.contain("ErrBadProductCode");
         console.log(e.message);
       }
    });
@@ -88,7 +90,7 @@ describe("Auction", function () {
         assert.fail("FAIL! called product() with a non-owner address and encountered no error");
       } catch(e) {
         expect(e).to.not.empty;
-        expect(e.message).to.contain("FORBIDDEN");
+        expect(e.message).to.contain("ErrForbidden()");
         console.log(e.message);
       }
   });
@@ -133,7 +135,7 @@ describe("Auction", function () {
       try {
         var currentBid = await auctionContract.getCurrentBids(1n, bidder1.address); // must not exists
       } catch (ee) {
-        expect(ee.message).to.contain("BID_NOT_FOUND");
+        expect(ee.message).to.contain("ErrProductNotFound()");
       }
     }
   });
@@ -178,7 +180,7 @@ describe("Auction", function () {
     try {
       await auctionContract.connect(bidder2).bid(1, { value: hre.ethers.parseEther("2.0") });
     } catch(e) {
-      expect(e.message).to.contain("ALREADY_CLOSED");
+      expect(e.message).to.contain("ErrAuctionClosed()");
     }
 
     var winningBidsJson = await auctionContract.connect(owner).getWinners();
@@ -193,6 +195,73 @@ describe("Auction", function () {
       expect(BigInt(winningBids[0].amount)).to.equal(hre.ethers.parseEther("2.0"));
       expect(winningBids[0].winner).to.equal(bidder2.address);
     }
+    
+  });
+
+  it("FAIL must error on trying to withdraw; because of no deposited credit", async function(){
+    await auctionContract.connect(owner).authorize(bidder1)
+    try {
+      await auctionContract.connect(owner).withdraw();
+    } catch(e) {
+      expect(e.message).to.contain("ErrOutOfBalance()");
+    }
+  });
+
+
+  it("FAIL must error on trying to withdraw; because of deposit being held by bidding process ", async function(){
+    [owner, unauthorized, bidder1, bidder2] = await hre.ethers.getSigners();
+
+    auctionFactory = await hre.ethers.getContractFactory("Auction", owner);
+    auctionContract = await auctionFactory.deploy(ActivationType.Manual);
+
+    await auctionContract.connect(owner).authorize(bidder1);
+    await auctionContract.connect(owner).product(1001n, 1000, false);
+    await auctionContract.connect(owner).startAuction();
+    await auctionContract.connect(bidder1).bid(1001n, { value: hre.ethers.parseEther("2.0")});
+
+    var caughtException = false;
+    try {
+      var balance = await auctionContract.connect(bidder1).getMyBalance();
+      expect(balance).to.equal(hre.ethers.parseEther("2.0"));
+      await auctionContract.connect(bidder1).withdraw();      
+    } catch(e) {
+      caughtException = true;
+      expect(balance).to.equal(hre.ethers.parseEther("2.0"));
+      var balance = await auctionContract.connect(bidder1).getMyBalance();
+      expect(e.message).to.contain("ErrOutOfBalance()");
+    }
+
+    expect(caughtException).to.be.true;
+  });
+
+  it("OK must be able to withdraw", async function(){
+    [owner, unauthorized, bidder1, bidder2] = await hre.ethers.getSigners();
+
+    auctionFactory = await hre.ethers.getContractFactory("Auction", owner);
+    auctionContract = await auctionFactory.deploy(ActivationType.Manual);
+
+    await auctionContract.connect(owner).authorize(bidder1);
+    await auctionContract.connect(owner).product(1001n, 1000, false);
+    await auctionContract.connect(owner).startAuction();
+    await auctionContract.connect(bidder1).bid(1001n, { value: hre.ethers.parseEther("2.0")});
+    
+
+    var balance = await auctionContract.connect(bidder1).getMyBalance();
+      expect(balance).to.equal(hre.ethers.parseEther("2.0"));
+      
+      // we put a new bid on the same product, hence releasing the previously placed 
+      // 2.0eth bid, which makes it free for withdrawal
+      await auctionContract.connect(bidder1).bid(1001n, { value: hre.ethers.parseEther("3.0")});
+
+      var beforeWithdrawl = await hre.ethers.provider.getBalance(bidder1);
+      response = await auctionContract.connect(bidder1).withdraw();
+      receipt = await response.wait();
+      var gasUsed = receipt.gasUsed * receipt.gasPrice;
+      var afterWithdrawl = await hre.ethers.provider.getBalance(bidder1);
+
+      // note: here we subtract the gasUsed from our original expected balance, to see
+      // if our current balance equals the one with withdrawal minus gasUsed.
+      expect(afterWithdrawl).to.equal(beforeWithdrawl+ (hre.ethers.parseEther("2.0")-gasUsed));
     
   });
 

@@ -2,7 +2,6 @@
 This ethereum smart contract enables you (as the owner) to start a multi product auction. Each product can have its own
 starting price (in eth). 
 
-
 ### Features
 - Allows authorizing a list of bidders
 - Allows setting start and end time for the auction

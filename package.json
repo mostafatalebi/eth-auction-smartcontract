@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "solidity-json-writer": "^1.2.0"
+    "solidity-json-writer": "^1.2.0",
+    "web3": "^4.16.0"
   },
   "name": "src",
   "version": "1.0.0",
