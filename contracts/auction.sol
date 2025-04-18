@@ -183,11 +183,27 @@ contract Auction {
         delete allowedBuyers[toBeBuyer];
     }
 
+    // allows bidding using owner's account on behalf of someone else.
+    // Doing this allows skipping signer part and use someone else's address
+    // and bid it. It, however, still requires you to have authorized the bidder user
+    // beforehead. 
+    // this function is useful for backend systems where the process needs to be
+    // automated or integrated into their server (without needing the client side
+    // of the app to be involved with business logic [signing etc.])
+    function bidAs(uint productCode, address bidder) external payable authorizedBidder {
+        _doBid(productCode, bidder);
+    }
+
     // bidding doesn't handle any sort of refund or withdrawal. If the bidder
     // has attempted several bids, for each individual bid, the amount of ether
     // should be sent along this function call. To withdraw his/her fund, the bidder
     // needs to call withdraw function.
     function bid(uint productCode) external payable authorizedBidder {
+        _doBid(productCode, msg.sender);
+    }
+
+    function _doBid(uint productCode, address bidder) internal  {
+        require(allowedBuyers[bidder] == true, ErrForbidden());
         if(auctionStartType == ActivationType.Temporal){
             require(block.timestamp > auctionStartTime, ErrAuctionNotStarted());
             require(block.timestamp < auctionEndTime, ErrAuctionClosed());
@@ -198,15 +214,15 @@ contract Auction {
         uint amount = msg.value;
         require(amount >= minimumAllowedBid, ErrBidTooLow());
 
-        if(currentBids[productCode][msg.sender].put == true){
-            require(currentBids[productCode][msg.sender].amount < amount, ErrBidCannotBeLowerThanPrevious());
-             biddersDeposit[msg.sender] -= currentBids[productCode][msg.sender].amount;
-             biddersDeposit[msg.sender] += amount;
-            currentBids[productCode][msg.sender].amount = amount;
+        if(currentBids[productCode][bidder].put == true){
+            require(currentBids[productCode][bidder].amount < amount, ErrBidCannotBeLowerThanPrevious());
+             biddersDeposit[bidder] -= currentBids[productCode][bidder].amount;
+             biddersDeposit[bidder] += amount;
+            currentBids[productCode][bidder].amount = amount;
         } else {
-             biddersDeposit[msg.sender] += amount;
-            currentBids[productCode][msg.sender] = Bid({ 
-                buyer: msg.sender,
+             biddersDeposit[bidder] += amount;
+            currentBids[productCode][bidder] = Bid({ 
+                buyer: bidder,
                 productCode: productCode,
                 amount: amount,
             put: true}); 
@@ -214,7 +230,7 @@ contract Auction {
 
         if(winningBids[productCode].amount < amount) {
             winningBids[productCode] = Bid({ 
-                buyer: msg.sender,
+                buyer: bidder,
                 productCode: productCode,
                 amount: amount,
                 put: true});
@@ -222,7 +238,7 @@ contract Auction {
 
         emit BidPlaced(productCode, amount);
 
-        balances[msg.sender] += amount;
+        balances[bidder] += amount;
     }
 
     function getMyBalance() external view authorizedBidder returns (uint) {
@@ -230,12 +246,23 @@ contract Auction {
     }
     
     function withdraw() external authorizedBidder {
-        require(balances[msg.sender] > 0, ErrOutOfBalance());
-        uint spending =  biddersDeposit[msg.sender];
-        uint remainder = balances[msg.sender] - spending;
-        balances[msg.sender] -= remainder;
+        _doWithdraw(msg.sender);
+    }
+
+    // only owner can call this function and transfer the deposit
+    // of a bidder to its address
+    function withdrawAs(address bidder) external onlyOwner {
+        _doWithdraw(bidder);
+    }
+
+    function _doWithdraw(address bidder) private {
+        require(allowedBuyers[bidder] == true, ErrForbidden());
+        require(balances[bidder] > 0, ErrOutOfBalance());
+        uint spending =  biddersDeposit[bidder];
+        uint remainder = balances[bidder] - spending;
+        balances[bidder] -= remainder;
         require(remainder > 0, ErrOutOfBalance());
-        require(payable(msg.sender).send(remainder) == true, ErrWithdrawFailed());
+        require(payable(bidder).send(remainder) == true, ErrWithdrawFailed());
     }
 
     // adds/removes a product form the auction. It allows adding/removing product only before

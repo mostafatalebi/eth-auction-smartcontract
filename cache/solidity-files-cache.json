@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/alex/projects/ether/auction/contracts/auction.sol": {
-      "lastModificationDate": 1744904828406,
-      "contentHash": "ee3d757a7dbaa7cef1e7a2f95c514093",
+      "lastModificationDate": 1744980205368,
+      "contentHash": "377c8d666cdbdf65deb38bb65de9d5f1",
       "sourceName": "contracts/auction.sol",
       "solcConfig": {
         "version": "0.8.28",

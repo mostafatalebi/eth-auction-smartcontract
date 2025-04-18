@@ -265,5 +265,47 @@ describe("Auction", function () {
     
   });
 
+  it("OK must be able to bid on behalf of another user", async function(){
+    [owner, unauthorized, bidder1, bidder2] = await hre.ethers.getSigners();
+
+    auctionFactory = await hre.ethers.getContractFactory("Auction", owner);
+    auctionContract = await auctionFactory.deploy(ActivationType.Manual);
+
+
+    const exampleProductCode = 1001
+    await auctionContract.connect(owner).authorize(bidder1);
+    await auctionContract.connect(owner).product(101, 1000, false);
+    await auctionContract.connect(owner).startAuction();
+
+    try {      
+      await auctionContract.connect(owner).bidAs(101n, bidder1, { value: hre.ethers.parseEther("1.0")});
+    } catch(e) {
+      var currentBid = await auctionContract.getCurrentBids(101n, bidder1.address); // must not exists
+      expect(currentBid).to.equal(hre.ethers.parseEther("1.0"));
+    }
+  });
+
+
+  it("FAIL must be able to bid on behalf of another user, because bidder is not authorized", async function(){
+    [owner, unauthorized, bidder1, bidder2] = await hre.ethers.getSigners();
+
+    auctionFactory = await hre.ethers.getContractFactory("Auction", owner);
+    auctionContract = await auctionFactory.deploy(ActivationType.Manual);
+
+
+    const exampleProductCode = 1001
+    await auctionContract.connect(owner).product(101, 1000, false);
+    await auctionContract.connect(owner).startAuction();
+
+    var exceptionThrown = false
+    try {      
+      await auctionContract.connect(owner).bidAs(101n, bidder1, { value: hre.ethers.parseEther("1.0")});
+    } catch(e) {
+      exceptionThrown = true
+      expect(e.message).to.contain("ErrForbidden()");
+    }
+
+    expect(exceptionThrown).to.be.true;
+  });
 });
 
