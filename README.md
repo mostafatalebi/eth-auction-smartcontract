@@ -19,3 +19,15 @@ Function `product()` is used for adding/removing the product from the auction. O
 has not yet started.
 
 And there are a couple of other utility methods which you can find by reading the source code.
+
+
+### Tests
+There are test covering almost most of the functions of the contract. The tests are hardhat test. You need to install nodejs to run it.
+
+```bash
+npx hardhat compile # for compiling the contracgt
+npx hardhat test # for running the tests
+```
+### Integration
+There is another go project which uses this contract and offers APIs (for demonstration only, no authentication etc.), which
+you can find at: https://github.com/mostafatalebi/go-eth-auctions
